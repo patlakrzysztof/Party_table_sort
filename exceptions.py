@@ -1,0 +1,2 @@
+class ElementNotAtTable(Exception):
+    pass
