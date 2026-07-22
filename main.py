@@ -30,6 +30,7 @@ couples_list = [[0,1],[2,6],[4,5]]
 total_guests = len(guest_list)
 base_capasity = total_guests // number_of_tables
 remainder = total_guests % number_of_tables
+
 # first tables get one extra seat until all reminder are seated
 tables_capasity = [base_capasity + 1 if i < remainder else base_capasity for i in range(number_of_tables)]
 
@@ -117,25 +118,73 @@ def calculate_table_size(table, elements):
     helper function that calculates how many guests are actually
     sitting at a table (couples count as 2, singles as 1)
     """
-    return sum(elements[idx]["size"] for idx in table)
+    return sum(elements[i]["size"] for i in table)
 
 
-def check_elements_swap(table_idx,element_in,element_out,table_values,relations):
+def check_elements_swap(table1_idx, table2_idx, element1, element2, table_values, relations):
     """
-    helper function that calculates if element swap is positive or negative
+    helper function that calculates if element swap is positive or negative 
+    (from table1 element1 is taken to table2 and the other way around)
+    (returns a tuple of numbers that represents overall values change and a value change for both tables (>0 is positive and <0 is negative))
     """
-    table = tables[table_idx]
-    new_table_value = table_values[table_idx]
+    table1 = tables[table1_idx]
+    old_table1_value = table_values[table1_idx]
+    new_table1_value = old_table1_value
 
-    if element_out not in table:
-        raise ElementNotAtTable(f"Element {element_out} is not sitting at this table")
+    table2 = tables[table2_idx]
+    old_table2_value = table_values[table2_idx]
+    new_table2_value = old_table2_value
+
+    if element1 not in table1:
+        raise ElementNotAtTable(f"Element {element1} is not sitting at this table ({table1_idx})")
     
-    for i in range(len(table)):
-        if table[i] != element_out:
-            new_table_value -= (relations[table[i]][element_out] + relations[element_out][table[i]])
-            new_table_value += (relations[table[i]][element_in] + relations[element_in][table[i]])
+    if element2 not in table2:
+        raise ElementNotAtTable(f"Element {element2} is not sitting at this table ({table2_idx})")
+    
+    # calculate new value of the table1
+    for i in range(len(table1)):
+        if table1[i] != element1:
+            new_table1_value -= (relations[table1[i]][element1] + relations[element1][table1[i]])
+            new_table1_value += (relations[table1[i]][element2] + relations[element2][table1[i]])
+
+    # calculate new value of the table2
+    for i in range(len(table2)):
+        if table2[i] != element2:
+            new_table2_value -= (relations[table2[i]][element2] + relations[element2][table2[i]])
+            new_table2_value += (relations[table2[i]][element1] + relations[element1][table2[i]])
             
-    return new_table_value>table_values[table_idx]
+    table1_diff = new_table1_value - old_table1_value
+    table2_diff = new_table2_value - old_table2_value
+    # if change is for good for a table diff number should be > 0
+
+    # checking if the change is for good for the main algorithm
+    return (table1_diff+table2_diff, table1_diff, table2_diff)
+
+
+def swap_elements(table1_idx, table2_idx, element1, element2):
+    """
+    function that swap elements between tables
+    (element1 from table1 to table2 and the other way for element2)
+    """
+    table1 = tables[table1_idx]
+    table2 = tables[table2_idx]
+
+    if element1 not in table1:
+        raise ElementNotAtTable(f"Element {element1} is not sitting at this table ({table1_idx})")
+    
+    if element2 not in table2:
+        raise ElementNotAtTable(f"Element {element2} is not sitting at this table ({table2_idx})")
+
+    for i in range(len(table1)):
+        if table1[i]==element1:
+            tables[table1_idx][i]=element2
+            break
+
+    for i in range(len(table2)):
+        if table2[i]==element2:
+            tables[table2_idx][i]=element1
+            break
+
 
 
 def acceptance_probability(T,diff):
@@ -158,13 +207,20 @@ def find_best_solution(tables,iterations):
     # calculates initial table values
     table_values = [calculate_table_value(tables[i],relations) for i in range(len(tables))]
 
+
+
+
+
     print(tables)
     print(elements)
 
     try:
-        print(check_elements_swap(0,4,3,table_values,relations))
+        print(check_elements_swap(0,1,0,4,table_values,relations))
+        swap_elements(0,1,0,4)
+        print(tables)
     except ElementNotAtTable as e:
         print(e)
+
     
 
 find_best_solution(tables,1)
