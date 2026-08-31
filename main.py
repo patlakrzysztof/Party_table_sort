@@ -150,18 +150,22 @@ class SeatingOptimizer:
                 res += self.relations[table[j]][table[i]]
         return res
 
+    def update_table_values(self, *table_indices):
+        """
+        function that updates table values of tables given as arguments
+        """
+        for idx in table_indices:
+            self.table_values[idx] = self.calculate_table_value(self.tables[idx])
+
     def calculate_solution_value(self):
         """
-        function that calculates value of the actual solution
+        function that calculates value of the current solution
         """
-        return sum(
-            self.calculate_table_value(table)
-            for table in self.tables
-        )
+        return sum(self.calculate_table_value(table) for table in self.tables)
 
     def calculate_table_size(self, table):
         """
-        helper function that calculates how many guests are actually
+        helper function that calculates how many guests are currently
         sitting at a table (couples count as 2, singles as 1)
         """
         return sum(self.elements[i]["size"] for i in table)
@@ -330,17 +334,14 @@ class SeatingOptimizer:
         if element2 not in table2:
             raise ElementNotAtTable(f"Element {element2} is not sitting at this table ({table2_idx})")
 
-        for i in range(len(table1)):
-            if table1[i] == element1:
-                self.tables[table1_idx][i] = element2
-                break
+        self.tables[table1_idx].remove(element1)
+        self.tables[table1_idx].append(element2)
 
-        for i in range(len(table2)):
-            if table2[i] == element2:
-                self.tables[table2_idx][i] = element1
-                break
+        self.tables[table2_idx].remove(element2)
+        self.tables[table2_idx].append(element1)
 
-
+        
+    
     def acceptance_probability(self, T, diff):
         if diff >= 0:
             return 1.0
