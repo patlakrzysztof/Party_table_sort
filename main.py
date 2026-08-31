@@ -37,6 +37,16 @@ class SeatingOptimizer:
             for i in range(number_of_tables)
         ]
 
+        # calculate elements from the start
+        self.elements, self.relations = self.calculate_elements()
+
+        # initializing tables
+        self.initialize_tables()
+        
+        # calculate initial table values
+        self.table_values = [self.calculate_table_value(self.tables[i]) for i in range(len(self.tables))]
+        
+
     def calculate_elements(self):
         """
         function that calculates all elements and their relations
@@ -108,7 +118,11 @@ class SeatingOptimizer:
 
         return elements, relations
 
-    def calculate_table_value(self, table, relations):
+    def initialize_tables(self):
+        for i in range(len(self.elements)):
+            self.tables[i % self.number_of_tables].append(i)
+
+    def calculate_table_value(self, table):
         """
         helper function that calculates the value
         of the table from relations table
@@ -116,36 +130,34 @@ class SeatingOptimizer:
         res = 0
         for i in range(len(table)):
             for j in range(i + 1, len(table)):
-                if (relations[table[i]][table[j]] is None or relations[table[j]][table[i]] is None):
+                if (self.relations[table[i]][table[j]] is None or self.relations[table[j]][table[i]] is None):
                     raise TypeError("Relation value is None")
-                res += relations[table[i]][table[j]]
-                res += relations[table[j]][table[i]]
+                res += self.relations[table[i]][table[j]]
+                res += self.relations[table[j]][table[i]]
         return res
 
-    def calculate_solution_value(self, tables, relations):
+    def calculate_solution_value(self):
         """
         function that calculates value of the actual solution
         """
         return sum(
-            self.calculate_table_value(table, relations)
-            for table in tables
+            self.calculate_table_value(table, self.relations)
+            for table in self.tables
         )
 
-    def calculate_table_size(self, table, elements):
+    def calculate_table_size(self, table):
         """
         helper function that calculates how many guests are actually
         sitting at a table (couples count as 2, singles as 1)
         """
-        return sum(elements[i]["size"] for i in table)
+        return sum(self.elements[i]["size"] for i in table)
 
     def check_elements_swap(
         self,
         table1_idx,
         table2_idx,
         element1,
-        element2,
-        table_values,
-        relations
+        element2
     ):
         """
         helper function that calculates if element swap
@@ -158,8 +170,8 @@ class SeatingOptimizer:
         table1 = self.tables[table1_idx]
         table2 = self.tables[table2_idx]
 
-        old_table1_value = table_values[table1_idx]
-        old_table2_value = table_values[table2_idx]
+        old_table1_value = self.table_values[table1_idx]
+        old_table2_value = self.table_values[table2_idx]
 
         new_table1_value = old_table1_value
         new_table2_value = old_table2_value
@@ -174,19 +186,19 @@ class SeatingOptimizer:
         for i in range(len(table1)):
             if table1[i] != element1:
                 new_table1_value -= (
-                    relations[table1[i]][element1]
-                    + relations[element1][table1[i]]
+                    self.relations[table1[i]][element1]
+                    + self.relations[element1][table1[i]]
                 )
                 new_table1_value += (
-                    relations[table1[i]][element2]
-                    + relations[element2][table1[i]]
+                    self.relations[table1[i]][element2]
+                    + self.relations[element2][table1[i]]
                 )
 
         # calculate new value of the table2
         for i in range(len(table2)):
             if table2[i] != element2:
-                new_table2_value -= relations[table2[i]][element2] + relations[element2][table2[i]]
-                new_table2_value += relations[table2[i]][element1] + relations[element1][table2[i]]
+                new_table2_value -= self.relations[table2[i]][element2] + self.relations[element2][table2[i]]
+                new_table2_value += self.relations[table2[i]][element1] + self.relations[element1][table2[i]]
 
         table1_diff = new_table1_value - old_table1_value
         table2_diff = new_table2_value - old_table2_value
@@ -232,27 +244,16 @@ class SeatingOptimizer:
 
         return math.exp(diff / T)
 
-    def initialize_tables(self, elements):
-        for i in range(len(elements)):
-            self.tables[i % self.number_of_tables].append(i)
-
     def find_best_solution(self):
-
-        elements, relations = self.calculate_elements()
-
-        self.initialize_tables(elements)
-
-        # calculates initial table values
-        table_values = [self.calculate_table_value(self.tables[i],relations) for i in range(len(self.tables))]
 
         current_solution = 0
         best_solution = 0
 
         print(self.tables)
-        print(elements)
+        print(self.elements)
 
         try:
-            print(self.check_elements_swap(0,1,0,4,table_values,relations))
+            print(self.check_elements_swap(0,1,0,4))
             self.swap_elements(0,1,0,4)
             print(self.tables)
         except ElementNotAtTable as e:
