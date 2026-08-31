@@ -1,5 +1,6 @@
-from exceptions import ElementNotAtTable
+from exceptions import ElementNotAtTable,InitError,NoFreeSeats
 import math
+import copy
 
 
 class SeatingOptimizer:
@@ -119,8 +120,21 @@ class SeatingOptimizer:
         return elements, relations
 
     def initialize_tables(self):
-        for i in range(len(self.elements)):
-            self.tables[i % self.number_of_tables].append(i)
+        remaining_capacity = self.tables_capacity.copy()
+
+        for element_idx, element in enumerate(self.elements):
+            size = element["size"]
+
+            for table_idx in range(self.number_of_tables):
+                if remaining_capacity[table_idx] >= size:
+                    self.tables[table_idx].append(element_idx)
+                    remaining_capacity[table_idx] -= size
+                    break
+            else:
+                raise InitError(
+                f"Could not place element {element_idx}"
+                f"(size={size}) at any table"
+            )
 
     def calculate_table_value(self, table):
         """
@@ -141,7 +155,7 @@ class SeatingOptimizer:
         function that calculates value of the actual solution
         """
         return sum(
-            self.calculate_table_value(table, self.relations)
+            self.calculate_table_value(table)
             for table in self.tables
         )
 
@@ -151,6 +165,82 @@ class SeatingOptimizer:
         sitting at a table (couples count as 2, singles as 1)
         """
         return sum(self.elements[i]["size"] for i in table)
+
+    def check_element_move(
+            self,
+            table_from_idx,
+            element,
+            table_to_idx
+    ):
+        """
+        helper function that calculates if moving element
+        is positive or negative
+        (returns a tuple of numbers that represents overall values change 
+        and a value change for both tables (>0 is positive and <0 is negative))
+        """
+
+        if table_from_idx == table_to_idx:
+            return (0, 0, 0)
+
+        table_from = self.tables[table_from_idx]
+        table_to = self.tables[table_to_idx]
+
+        if element not in table_from:
+            raise ElementNotAtTable(f"Element {element} is not sitting at this table ({table_from_idx})")
+
+        element_size = self.elements[element]["size"]
+
+        new_table_to_size = self.calculate_table_size(table_to) + element_size
+
+        if new_table_to_size > self.tables_capacity[table_to_idx]:
+            raise NoFreeSeats(f"Move cannot happen due to lack of seats at the table {table_to_idx}")
+
+        old_table_from_value = self.table_values[table_from_idx]
+        old_table_to_value = self.table_values[table_to_idx]
+
+        new_table_from_value = old_table_from_value
+        new_table_to_value = old_table_to_value
+
+        # calculate new value of the table_from
+        for i in range(len(table_from)):
+            if table_from[i] != element:
+                new_table_from_value -= (
+                    self.relations[table_from[i]][element]
+                    + self.relations[element][table_from[i]]
+                )
+
+        # calculate new value of the table_to
+        for i in range(len(table_to)):
+            new_table_to_value += self.relations[table_to[i]][element] + self.relations[element][table_to[i]]
+
+        table_from_diff = new_table_from_value - old_table_from_value
+        table_to_diff = new_table_to_value - old_table_to_value
+        # if change is for good for a table diff number should be > 0
+
+        # checking if the change is for good for the main algorithm
+        return (table_from_diff + table_to_diff, table_from_diff, table_to_diff)
+
+    def move_element(
+            self,
+            table_from_idx,
+            element,
+            table_to_idx
+        ):
+            """
+            function that move element between tables
+            """
+
+            if table_from_idx == table_to_idx:
+                return
+
+            table_from = self.tables[table_from_idx]
+
+            if element not in table_from:
+                        raise ElementNotAtTable(f"Element {element} is not sitting at this table ({table_from_idx})")
+
+            self.tables[table_from_idx].remove(element)
+            self.tables[table_to_idx].append(element)
+            
 
     def check_elements_swap(
         self,
@@ -170,17 +260,29 @@ class SeatingOptimizer:
         table1 = self.tables[table1_idx]
         table2 = self.tables[table2_idx]
 
+        if element1 not in table1:
+            raise ElementNotAtTable(f"Element {element1} is not sitting at this table ({table1_idx})")
+        
+        if element2 not in table2:
+            raise ElementNotAtTable(f"Element {element2} is not sitting at this table ({table2_idx})")
+
+        element1_size = self.elements[element1]["size"]
+        element2_size = self.elements[element2]["size"]
+
+        new_size_table1 = self.calculate_table_size(table1) - element1_size + element2_size
+        new_size_table2 = self.calculate_table_size(table2) - element2_size + element1_size
+
+        if new_size_table1 > self.tables_capacity[table1_idx]:
+            raise NoFreeSeats(f"Swap cannot happen due to lack of seats at the table {table1_idx}")
+        
+        if new_size_table2 > self.tables_capacity[table2_idx]:
+            raise NoFreeSeats(f"Swap cannot happen due to lack of seats at the table {table2_idx}")
+        
         old_table1_value = self.table_values[table1_idx]
         old_table2_value = self.table_values[table2_idx]
 
         new_table1_value = old_table1_value
         new_table2_value = old_table2_value
-
-        if element1 not in table1:
-            raise ElementNotAtTable(f"Element {element1} is not sitting at this table ({table1_idx})")
-
-        if element2 not in table2:
-            raise ElementNotAtTable(f"Element {element2} is not sitting at this table ({table2_idx})")
 
         # calculate new value of the table1
         for i in range(len(table1)):
@@ -238,6 +340,7 @@ class SeatingOptimizer:
                 self.tables[table2_idx][i] = element1
                 break
 
+
     def acceptance_probability(self, T, diff):
         if diff >= 0:
             return 1.0
@@ -248,15 +351,17 @@ class SeatingOptimizer:
 
         current_solution = 0
         best_solution = 0
+        best_tables = copy.deepcopy(self.tables)
 
         print(self.tables)
+
         print(self.elements)
 
         try:
             print(self.check_elements_swap(0,1,0,4))
             self.swap_elements(0,1,0,4)
             print(self.tables)
-        except ElementNotAtTable as e:
+        except (ElementNotAtTable,NoFreeSeats) as e:
             print(e)
 
 # guest list
