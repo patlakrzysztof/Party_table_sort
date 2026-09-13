@@ -1,6 +1,7 @@
 from exceptions import ElementNotAtTable,InitError,NoFreeSeats
 import math
 import copy
+import random 
 
 
 class SeatingOptimizer:
@@ -119,6 +120,7 @@ class SeatingOptimizer:
 
         return elements, relations
 
+
     def initialize_tables(self):
         remaining_capacity = self.tables_capacity.copy()
 
@@ -136,6 +138,7 @@ class SeatingOptimizer:
                 f"(size={size}) at any table"
             )
 
+
     def calculate_table_value(self, table):
         """
         helper function that calculates the value
@@ -150,6 +153,7 @@ class SeatingOptimizer:
                 res += self.relations[table[j]][table[i]]
         return res
 
+
     def update_table_values(self, *table_indices):
         """
         function that updates table values of tables given as arguments
@@ -157,11 +161,13 @@ class SeatingOptimizer:
         for idx in table_indices:
             self.table_values[idx] = self.calculate_table_value(self.tables[idx])
 
+
     def calculate_solution_value(self):
         """
         function that calculates value of the current solution
         """
         return sum(self.calculate_table_value(table) for table in self.tables)
+
 
     def calculate_table_size(self, table):
         """
@@ -169,6 +175,7 @@ class SeatingOptimizer:
         sitting at a table (couples count as 2, singles as 1)
         """
         return sum(self.elements[i]["size"] for i in table)
+
 
     def check_element_move(
             self,
@@ -223,6 +230,7 @@ class SeatingOptimizer:
 
         # checking if the change is for good for the main algorithm
         return (table_from_diff + table_to_diff, table_from_diff, table_to_diff)
+
 
     def move_element(
             self,
@@ -313,6 +321,7 @@ class SeatingOptimizer:
         # checking if the change is for good for the main algorithm
         return (table1_diff + table2_diff, table1_diff, table2_diff)
 
+
     def swap_elements(
         self,
         table1_idx,
@@ -348,10 +357,53 @@ class SeatingOptimizer:
 
         return math.exp(diff / T)
 
+
+    def generate_random_move(self):
+        """
+        Generate swap action which returns elements and table indexes
+          or move action which returns tables and element to move
+        """
+
+        move_types = ["move","swap"]
+
+        move_probability_prc = [30,70]
+
+        # generate random move with probability
+        move_type = random.choices(move_types, weights=move_probability_prc, k=1)[0]
+
+        if move_type == "swap":
+
+            # generate tables to take elements from
+            table1_idx, table2_idx = random.sample(range(self.number_of_tables), 2)
+
+            if not self.tables[table1_idx] or not self.tables[table2_idx]:
+                return None
+
+            # generate elements from tables
+            element1 = random.choice(self.tables[table1_idx])
+            element2 = random.choice(self.tables[table2_idx])
+
+            return ("swap", table1_idx, table2_idx, element1, element2)
+        
+        else:
+
+            # generating table_from_idx to take element and table_to_idx to move element
+            table_from_idx, table_to_idx = random.sample(range(self.number_of_tables), 2)
+
+            if not self.tables[table_from_idx]:
+                return None
+
+            element = random.choice(self.tables[table_from_idx])
+
+            return ("move", table_from_idx, table_to_idx, element)
+
+
     def find_best_solution(self):
 
-        current_solution = 0
-        best_solution = 0
+        T = self.initial_temperature
+
+        current_value = self.calculate_solution_value()
+        best_value = current_value
         best_tables = copy.deepcopy(self.tables)
 
         print(self.tables)
