@@ -13,7 +13,7 @@ class SeatingOptimizer:
         couples_list,
         number_of_tables,
         initial_temperature=100,
-        cooling_rate=15,
+        cooling_rate=1,
         max_iterations=1
     ):
 
@@ -269,6 +269,8 @@ class SeatingOptimizer:
         and a value change for both tables (>0 is positive and <0 is negative))
         """
 
+        if (table1_idx==table2_idx): return (0,0,0)
+
         table1 = self.tables[table1_idx]
         table2 = self.tables[table2_idx]
 
@@ -366,7 +368,7 @@ class SeatingOptimizer:
 
         move_types = ["move","swap"]
 
-        move_probability_prc = [30,70]
+        move_probability_prc = [15,85]
 
         # generate random move with probability
         move_type = random.choices(move_types, weights=move_probability_prc, k=1)[0]
@@ -404,18 +406,69 @@ class SeatingOptimizer:
 
         current_value = self.calculate_solution_value()
         best_value = current_value
-        best_tables = copy.deepcopy(self.tables)
+        best_tables = [t.copy() for t in self.tables]
 
-        print(self.tables)
+        # main simulated annealing loop
+        while T > 0.1:
+            for _ in range(self.max_iterations):
 
-        print(self.elements)
+                # generating a move to make
+                move = self.generate_random_move()
 
-        try:
-            print(self.check_elements_swap(0,1,0,4))
-            self.swap_elements(0,1,0,4)
-            print(self.tables)
-        except (ElementNotAtTable,NoFreeSeats) as e:
-            print(e)
+                if move is None:
+                    continue
+
+                try:
+
+                    if move[0] == "swap":
+                        # taking elements and tables from move
+                        _, table1_idx, table2_idx, element1, element2 = move
+
+                        # checking if swap can happen
+                        diff, _, _ = self.check_elements_swap(table1_idx, table2_idx, element1, element2)
+
+                        # when difference is negative, accept the swap with certain probability
+                        if (diff > 0 or random.random() < self.acceptance_probability(T, diff)):
+
+                            self.swap_elements(table1_idx, table2_idx, element1, element2)
+
+                            self.update_table_values(table1_idx, table2_idx)
+
+                            current_value += diff
+                    else:
+                        # taking elements and tables from move
+                        _, table_from_idx, table_to_idx, element = move
+
+                        # checking if move can happen
+                        diff, _, _ = self.check_element_move(table_from_idx, element, table_to_idx)
+
+                        # when difference is negative, accept the element move with certain probability
+                        if (diff > 0 or random.random() < self.acceptance_probability(T, diff)):
+
+                            self.move_element(table_from_idx, element, table_to_idx)
+
+                            self.update_table_values(table_from_idx, table_to_idx)
+
+                            current_value += diff
+
+                    if current_value > best_value:
+                        best_value = current_value
+                        best_tables = [t.copy() for t in self.tables]                       
+
+                except (ElementNotAtTable, NoFreeSeats):
+                    continue
+
+            T *= (1 - self.cooling_rate / 100)
+
+        # updating best solution for tables
+        self.tables = best_tables
+
+        # updating best values for tables
+        self.table_values = [ self.calculate_table_value(table) for table in self.tables ]
+
+        return best_tables, best_value
+
+
 
 # guest list
 guest_list = [
@@ -451,4 +504,6 @@ optimizer = SeatingOptimizer(
     number_of_tables=3,
 )
 
-optimizer.find_best_solution()
+print(optimizer.find_best_solution())
+
+print(optimizer.elements)
