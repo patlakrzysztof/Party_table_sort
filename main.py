@@ -1,509 +1,297 @@
-from exceptions import ElementNotAtTable,InitError,NoFreeSeats
-import math
-import copy
-import random 
-
-
-class SeatingOptimizer:
-
-    def __init__(
-        self,
-        guest_list,
-        guest_relations,
-        couples_list,
-        number_of_tables,
-        initial_temperature=100,
-        cooling_rate=1,
-        max_iterations=1
-    ):
-
-        self.guest_list = guest_list
-        self.guest_relations = guest_relations
-        self.couples_list = couples_list
-
-        self.number_of_tables = number_of_tables
-
-        self.initial_temperature = initial_temperature
-        self.cooling_rate = cooling_rate
-        self.max_iterations = max_iterations
-
-        self.tables = [[] for _ in range(number_of_tables)]
-        self.table_values = [math.inf for _ in range(number_of_tables)]
-
-        total_guests = len(guest_list)
-        base_capacity = total_guests // number_of_tables
-        remainder = total_guests % number_of_tables
-
-        self.tables_capacity = [
-            base_capacity + 1 if i < remainder else base_capacity
-            for i in range(number_of_tables)
-        ]
-
-        # calculate elements from the start
-        self.elements, self.relations = self.calculate_elements()
-
-        # initializing tables
-        self.initialize_tables()
-        
-        # calculate initial table values
-        self.table_values = [self.calculate_table_value(self.tables[i]) for i in range(len(self.tables))]
-        
-
-    def calculate_elements(self):
-        """
-        function that calculates all elements and their relations
-        and returns them (the list starts with all the couples,
-        then are the loners)
-        """
-
-        # our elements table
-        elements = []
-
-        # for not doubling couples
-        taken_guests = set()
-
-        # adding couples to elements
-        for couple in self.couples_list:
-            elements.append({
-                "index": [couple[0], couple[1]],
-                "size": 2
-            })
-
-            taken_guests.add(couple[0])
-            taken_guests.add(couple[1])
-
-        # adding other guests to elements
-        for i in range(len(self.guest_list)):
-            if i not in taken_guests:
-                elements.append({
-                    "index": [i],
-                    "size": 1
-                })
-
-        # new relations of elements
-        relations = [[] for _ in range(len(elements))]
-
-        # making new relation graph for elements (couple relation = sum(partners relations))
-        for i, element in enumerate(elements):
-            new_relation = [0 for _ in range(len(elements))]
-            new_relation[i] = None
-
-            if element["size"] == 1:
-                index1 = element["index"][0]
-                for j, element2 in enumerate(elements):
-                    if i == j:
-                        continue
-                    elif element2["size"] == 1:
-                        new_relation[j] = self.guest_relations[index1][element2["index"][0]]
-                    elif element2["size"] == 2:
-                        couple = element2["index"]
-                        new_relation[j] = self.guest_relations[index1][couple[0]] + self.guest_relations[index1][couple[1]]
-            elif element["size"] == 2:
-                index1 = element["index"][0]
-                index2 = element["index"][1]
-                for j, element2 in enumerate(elements):
-                    if i == j:
-                        continue
-                    elif element2["size"] == 1:
-                        index3 = element2["index"][0]
-                        new_relation[j] = self.guest_relations[index1][index3] + self.guest_relations[index2][index3]
-                    elif element2["size"] == 2:
-                        couple = element2["index"]
-                        new_relation[j] = (
-                            self.guest_relations[index1][couple[0]]
-                            + self.guest_relations[index1][couple[1]]
-                            + self.guest_relations[index2][couple[0]]
-                            + self.guest_relations[index2][couple[1]]
-                        )
-
-            relations[i] = new_relation
-
-        return elements, relations
-
-
-    def initialize_tables(self):
-        remaining_capacity = self.tables_capacity.copy()
-
-        for element_idx, element in enumerate(self.elements):
-            size = element["size"]
-
-            for table_idx in range(self.number_of_tables):
-                if remaining_capacity[table_idx] >= size:
-                    self.tables[table_idx].append(element_idx)
-                    remaining_capacity[table_idx] -= size
-                    break
-            else:
-                raise InitError(
-                f"Could not place element {element_idx}"
-                f"(size={size}) at any table"
-            )
-
-
-    def calculate_table_value(self, table):
-        """
-        helper function that calculates the value
-        of the table from relations table
-        """
-        res = 0
-        for i in range(len(table)):
-            for j in range(i + 1, len(table)):
-                if (self.relations[table[i]][table[j]] is None or self.relations[table[j]][table[i]] is None):
-                    raise TypeError("Relation value is None")
-                res += self.relations[table[i]][table[j]]
-                res += self.relations[table[j]][table[i]]
-        return res
-
-
-    def update_table_values(self, *table_indices):
-        """
-        function that updates table values of tables given as arguments
-        """
-        for idx in table_indices:
-            self.table_values[idx] = self.calculate_table_value(self.tables[idx])
-
-
-    def calculate_solution_value(self):
-        """
-        function that calculates value of the current solution
-        """
-        return sum(self.calculate_table_value(table) for table in self.tables)
-
-
-    def calculate_table_size(self, table):
-        """
-        helper function that calculates how many guests are currently
-        sitting at a table (couples count as 2, singles as 1)
-        """
-        return sum(self.elements[i]["size"] for i in table)
-
-
-    def check_element_move(
-            self,
-            table_from_idx,
-            element,
-            table_to_idx
-    ):
-        """
-        helper function that calculates if moving element
-        is positive or negative
-        (returns a tuple of numbers that represents overall values change 
-        and a value change for both tables (>0 is positive and <0 is negative))
-        """
-
-        if table_from_idx == table_to_idx:
-            return (0, 0, 0)
-
-        table_from = self.tables[table_from_idx]
-        table_to = self.tables[table_to_idx]
-
-        if element not in table_from:
-            raise ElementNotAtTable(f"Element {element} is not sitting at this table ({table_from_idx})")
-
-        element_size = self.elements[element]["size"]
-
-        new_table_to_size = self.calculate_table_size(table_to) + element_size
-
-        if new_table_to_size > self.tables_capacity[table_to_idx]:
-            raise NoFreeSeats(f"Move cannot happen due to lack of seats at the table {table_to_idx}")
-
-        old_table_from_value = self.table_values[table_from_idx]
-        old_table_to_value = self.table_values[table_to_idx]
-
-        new_table_from_value = old_table_from_value
-        new_table_to_value = old_table_to_value
-
-        # calculate new value of the table_from
-        for i in range(len(table_from)):
-            if table_from[i] != element:
-                new_table_from_value -= (
-                    self.relations[table_from[i]][element]
-                    + self.relations[element][table_from[i]]
-                )
-
-        # calculate new value of the table_to
-        for i in range(len(table_to)):
-            new_table_to_value += self.relations[table_to[i]][element] + self.relations[element][table_to[i]]
-
-        table_from_diff = new_table_from_value - old_table_from_value
-        table_to_diff = new_table_to_value - old_table_to_value
-        # if change is for good for a table diff number should be > 0
-
-        # checking if the change is for good for the main algorithm
-        return (table_from_diff + table_to_diff, table_from_diff, table_to_diff)
-
-
-    def move_element(
-            self,
-            table_from_idx,
-            element,
-            table_to_idx
-        ):
-            """
-            function that move element between tables
-            """
-
-            if table_from_idx == table_to_idx:
-                return
-
-            table_from = self.tables[table_from_idx]
-
-            if element not in table_from:
-                        raise ElementNotAtTable(f"Element {element} is not sitting at this table ({table_from_idx})")
-
-            self.tables[table_from_idx].remove(element)
-            self.tables[table_to_idx].append(element)
-            
-
-    def check_elements_swap(
-        self,
-        table1_idx,
-        table2_idx,
-        element1,
-        element2
-    ):
-        """
-        helper function that calculates if element swap
-        is positive or negative
-        (from table1 element1 is taken to table2 and the other way around)
-        (returns a tuple of numbers that represents overall values change 
-        and a value change for both tables (>0 is positive and <0 is negative))
-        """
-
-        if (table1_idx==table2_idx): return (0,0,0)
-
-        table1 = self.tables[table1_idx]
-        table2 = self.tables[table2_idx]
-
-        if element1 not in table1:
-            raise ElementNotAtTable(f"Element {element1} is not sitting at this table ({table1_idx})")
-        
-        if element2 not in table2:
-            raise ElementNotAtTable(f"Element {element2} is not sitting at this table ({table2_idx})")
-
-        element1_size = self.elements[element1]["size"]
-        element2_size = self.elements[element2]["size"]
-
-        new_size_table1 = self.calculate_table_size(table1) - element1_size + element2_size
-        new_size_table2 = self.calculate_table_size(table2) - element2_size + element1_size
-
-        if new_size_table1 > self.tables_capacity[table1_idx]:
-            raise NoFreeSeats(f"Swap cannot happen due to lack of seats at the table {table1_idx}")
-        
-        if new_size_table2 > self.tables_capacity[table2_idx]:
-            raise NoFreeSeats(f"Swap cannot happen due to lack of seats at the table {table2_idx}")
-        
-        old_table1_value = self.table_values[table1_idx]
-        old_table2_value = self.table_values[table2_idx]
-
-        new_table1_value = old_table1_value
-        new_table2_value = old_table2_value
-
-        # calculate new value of the table1
-        for i in range(len(table1)):
-            if table1[i] != element1:
-                new_table1_value -= (
-                    self.relations[table1[i]][element1]
-                    + self.relations[element1][table1[i]]
-                )
-                new_table1_value += (
-                    self.relations[table1[i]][element2]
-                    + self.relations[element2][table1[i]]
-                )
-
-        # calculate new value of the table2
-        for i in range(len(table2)):
-            if table2[i] != element2:
-                new_table2_value -= self.relations[table2[i]][element2] + self.relations[element2][table2[i]]
-                new_table2_value += self.relations[table2[i]][element1] + self.relations[element1][table2[i]]
-
-        table1_diff = new_table1_value - old_table1_value
-        table2_diff = new_table2_value - old_table2_value
-        # if change is for good for a table diff number should be > 0
-
-        # checking if the change is for good for the main algorithm
-        return (table1_diff + table2_diff, table1_diff, table2_diff)
-
-
-    def swap_elements(
-        self,
-        table1_idx,
-        table2_idx,
-        element1,
-        element2
-    ):
-        """
-        function that swap elements between tables
-        (element1 from table1 to table2 and the other way for element2)
-        """
-
-        table1 = self.tables[table1_idx]
-        table2 = self.tables[table2_idx]
-
-        if element1 not in table1:
-            raise ElementNotAtTable(f"Element {element1} is not sitting at this table ({table1_idx})")
-
-        if element2 not in table2:
-            raise ElementNotAtTable(f"Element {element2} is not sitting at this table ({table2_idx})")
-
-        self.tables[table1_idx].remove(element1)
-        self.tables[table1_idx].append(element2)
-
-        self.tables[table2_idx].remove(element2)
-        self.tables[table2_idx].append(element1)
-
-        
-    
-    def acceptance_probability(self, T, diff):
-        if diff >= 0:
-            return 1.0
-
-        return math.exp(diff / T)
-
-
-    def generate_random_move(self):
-        """
-        Generate swap action which returns elements and table indexes
-          or move action which returns tables and element to move
-        """
-
-        move_types = ["move","swap"]
-
-        move_probability_prc = [15,85]
-
-        # generate random move with probability
-        move_type = random.choices(move_types, weights=move_probability_prc, k=1)[0]
-
-        if move_type == "swap":
-
-            # generate tables to take elements from
-            table1_idx, table2_idx = random.sample(range(self.number_of_tables), 2)
-
-            if not self.tables[table1_idx] or not self.tables[table2_idx]:
-                return None
-
-            # generate elements from tables
-            element1 = random.choice(self.tables[table1_idx])
-            element2 = random.choice(self.tables[table2_idx])
-
-            return ("swap", table1_idx, table2_idx, element1, element2)
-        
-        else:
-
-            # generating table_from_idx to take element and table_to_idx to move element
-            table_from_idx, table_to_idx = random.sample(range(self.number_of_tables), 2)
-
-            if not self.tables[table_from_idx]:
-                return None
-
-            element = random.choice(self.tables[table_from_idx])
-
-            return ("move", table_from_idx, table_to_idx, element)
-
-
-    def find_best_solution(self):
-
-        T = self.initial_temperature
-
-        current_value = self.calculate_solution_value()
-        best_value = current_value
-        best_tables = [t.copy() for t in self.tables]
-
-        # main simulated annealing loop
-        while T > 0.1:
-            for _ in range(self.max_iterations):
-
-                # generating a move to make
-                move = self.generate_random_move()
-
-                if move is None:
-                    continue
-
-                try:
-
-                    if move[0] == "swap":
-                        # taking elements and tables from move
-                        _, table1_idx, table2_idx, element1, element2 = move
-
-                        # checking if swap can happen
-                        diff, _, _ = self.check_elements_swap(table1_idx, table2_idx, element1, element2)
-
-                        # when difference is negative, accept the swap with certain probability
-                        if (diff > 0 or random.random() < self.acceptance_probability(T, diff)):
-
-                            self.swap_elements(table1_idx, table2_idx, element1, element2)
-
-                            self.update_table_values(table1_idx, table2_idx)
-
-                            current_value += diff
-                    else:
-                        # taking elements and tables from move
-                        _, table_from_idx, table_to_idx, element = move
-
-                        # checking if move can happen
-                        diff, _, _ = self.check_element_move(table_from_idx, element, table_to_idx)
-
-                        # when difference is negative, accept the element move with certain probability
-                        if (diff > 0 or random.random() < self.acceptance_probability(T, diff)):
-
-                            self.move_element(table_from_idx, element, table_to_idx)
-
-                            self.update_table_values(table_from_idx, table_to_idx)
-
-                            current_value += diff
-
-                    if current_value > best_value:
-                        best_value = current_value
-                        best_tables = [t.copy() for t in self.tables]                       
-
-                except (ElementNotAtTable, NoFreeSeats):
-                    continue
-
-            T *= (1 - self.cooling_rate / 100)
-
-        # updating best solution for tables
-        self.tables = best_tables
-
-        # updating best values for tables
-        self.table_values = [ self.calculate_table_value(table) for table in self.tables ]
-
-        return best_tables, best_value
-
-
-
-# guest list
-guest_list = [
-    "Amelia",
-    "Krzysiek",
-    "Paweł",
-    "Aleksander",
-    "Ruda",
-    "Mateusz",
-    "Gotka",
-    "Kamil"
-]
-
-# our graph of dependencies [-100,100] - None for self
-guest_relations = [
-    [None,100,80,-100,40,70,93,-100],    #Amelia
-     [100,None,80,-80,30,80,60,-100],    #Krzysiek
-     [80,80,None,0,70,80,100,-100],      #Paweł
-     [90,-50,0,None,0,0,60,20],        #Aleksander
-     [40,30,70,0,None,100,70,-100],      #Ruda
-     [80,80,80,0,100,None,40,70],      #Mateusz
-     [93,60,100,60,70,40,None,-100],     #Gotka
-     [-100,-100,-100,20,-100,70,-100,None] #Kamil
-     ]
-
-# couples (couple must sit together)
-couples_list = [[0,1],[2,6],[4,5]]
-
-optimizer = SeatingOptimizer(
-    guest_list=guest_list,
-    guest_relations=guest_relations,
-    couples_list=couples_list,
-    number_of_tables=3,
+from PySide6.QtWidgets import (
+    QApplication,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QListWidget,
+    QPushButton,
+    QLineEdit,
+    QLabel,
+    QComboBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit
 )
 
-print(optimizer.find_best_solution())
+import sys
 
-print(optimizer.elements)
+
+class SeatingGUI(QWidget):
+
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Seating optimiser")
+        self.resize(1000, 700)
+
+        self.guest_names = []
+
+        self.couples = []
+
+        self.singles = []
+
+        main_layout = QVBoxLayout()
+
+        # guests
+
+        guests_label = QLabel("Guests")
+
+        self.guest_list = QListWidget()
+
+        guest_controls = QHBoxLayout()
+
+        self.guest_input = QLineEdit()
+        self.guest_input.setPlaceholderText("Guest name")
+
+        add_guest_btn = QPushButton("Add")
+        remove_guest_btn = QPushButton("Remove")
+
+        add_guest_btn.clicked.connect(self.add_guest)
+        remove_guest_btn.clicked.connect(self.remove_guest)
+
+        guest_controls.addWidget(self.guest_input)
+        guest_controls.addWidget(add_guest_btn)
+        guest_controls.addWidget(remove_guest_btn)
+
+        # couples
+
+        couples_label = QLabel("Couples")
+
+        self.couples_list = QListWidget()
+
+        couples_controls = QHBoxLayout()
+
+        # dropdown list for couples
+        self.person1_combo = QComboBox()
+        self.person2_combo = QComboBox()
+
+        add_couple_btn = QPushButton("Add")
+        add_couple_btn.clicked.connect(self.add_couple)
+
+        remove_couple_btn = QPushButton("Remove")
+        remove_couple_btn.clicked.connect(self.remove_couple)
+
+        couples_controls.addWidget(self.person1_combo)
+        couples_controls.addWidget(self.person2_combo)
+        couples_controls.addWidget(add_couple_btn)
+        couples_controls.addWidget(remove_couple_btn)
+
+        # relations
+
+        relations_label = QLabel("Relations")
+
+        self.relations_table = QTableWidget()
+
+        # output
+
+        calculate_btn = QPushButton("Find best solution")
+        calculate_btn.clicked.connect(self.calculate)
+
+        self.result_box = QTextEdit()
+        self.result_box.setReadOnly(True)
+
+        # layout
+
+        main_layout.addWidget(guests_label)
+        main_layout.addWidget(self.guest_list)
+        main_layout.addLayout(guest_controls)
+
+        main_layout.addWidget(couples_label)
+        main_layout.addWidget(self.couples_list)
+        main_layout.addLayout(couples_controls)
+
+        main_layout.addWidget(relations_label)
+        main_layout.addWidget(self.relations_table)
+
+        main_layout.addWidget(calculate_btn)
+
+        main_layout.addWidget(QLabel("Output"))
+        main_layout.addWidget(self.result_box)
+
+        self.setLayout(main_layout)
+
+    def add_guest(self):
+        """
+        Function adds guest to guest_list and couples dropdown list 
+        """
+
+        name = self.guest_input.text().strip()
+
+        if not name:
+            return
+
+        self.guest_names.append(name)
+
+        self.singles.append(name)
+
+        self.guest_list.addItem(name)
+
+        self.person1_combo.addItem(name)
+        self.person2_combo.addItem(name)
+
+        self.update_relations_table()
+
+        self.guest_input.clear()
+
+        self.refresh_combos()
+
+    def remove_guest(self):
+        """
+        Function removes guest from guest_list 
+        """
+
+        row = self.guest_list.currentRow()
+
+        if row < 0:
+            return
+
+        self.guest_names.pop(row)
+
+        guest_name = self.guest_names[row]
+
+        if guest_name in self.singles:
+            self.singles.remove(guest_name)
+
+        self.guest_list.takeItem(row)
+
+        self.refresh_combos()
+        self.update_relations_table()
+
+    def refresh_combos(self):
+
+        self.person1_combo.clear()
+        self.person2_combo.clear()
+
+        self.person1_combo.addItems(self.singles)
+        self.person2_combo.addItems(self.singles)
+
+    def add_couple(self):
+        """
+        Function that creates a couple out of singles (person can be only in 1 couple)
+        """
+
+        person1 = self.person1_combo.currentText()
+        person2 = self.person2_combo.currentText()
+
+        if person1 == person2:
+            return
+
+        # check if person is in some couple already
+        for p1, p2 in self.couples:
+            if person1 in (p1, p2):
+                return
+
+            if person2 in (p1, p2):
+                return
+
+        self.couples.append((person1, person2))
+
+        self.couples_list.addItem(
+            f"{person1} - {person2}"
+        )
+
+        # relation of couple must be 100
+        idx1 = self.guest_names.index(person1)
+        idx2 = self.guest_names.index(person2)
+
+        item1 = self.relations_table.item(idx1, idx2)
+        item2 = self.relations_table.item(idx2, idx1)
+
+        item1.setText("100")
+        item2.setText("100")
+
+        # removes couple from dropdown list
+        self.singles.remove(person1)
+        self.singles.remove(person2)
+        self.refresh_combos()
+
+
+    def remove_couple(self):
+        """
+        Function that removes couple and turns them into singles
+        """
+
+        row = self.couples_list.currentRow()
+
+        if row < 0:
+            return
+
+        person1, person2 = self.couples[row]
+
+        idx1 = self.guest_names.index(person1)
+        idx2 = self.guest_names.index(person2)
+
+
+        # default relation
+        self.relations_table.item(idx1, idx2).setText("0")
+        self.relations_table.item(idx2, idx1).setText("0")
+
+        self.couples.pop(row)
+        self.couples_list.takeItem(row)
+
+        # turn them into singles again
+        self.singles.append(person1)
+        self.singles.append(person2)
+
+        self.refresh_combos()
+
+
+    #=========================================
+    # to rewrite
+    #========================================
+
+    def update_relations_table(self):
+
+        n = len(self.guest_names)
+
+        self.relations_table.setRowCount(n)
+        self.relations_table.setColumnCount(n)
+
+        self.relations_table.setHorizontalHeaderLabels(
+            self.guest_names
+        )
+
+        self.relations_table.setVerticalHeaderLabels(
+            self.guest_names
+        )
+
+        for row in range(n):
+            for col in range(n):
+
+                if row == col:
+                    item = QTableWidgetItem("-")
+                else:
+                    item = QTableWidgetItem("0")
+
+                self.relations_table.setItem(row, col, item)
+
+    def calculate(self):
+
+        result = []
+
+        result.append("Tutaj podłączymy SeatingOptimizer\n")
+
+        result.append("Goście:")
+
+        for guest in self.guest_names:
+            result.append(f"• {guest}")
+
+        result.append("\nPary:")
+
+        for i in range(self.couples_list.count()):
+            result.append(
+                self.couples_list.item(i).text()
+            )
+
+        self.result_box.setText(
+            "\n".join(result)
+        )
+
+if __name__ == "__main__":
+
+    app = QApplication(sys.argv)
+
+    window = SeatingGUI()
+    window.show()
+
+    sys.exit(app.exec())
