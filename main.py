@@ -137,7 +137,7 @@ class SeatingGUI(QWidget):
 
     def remove_guest(self):
         """
-        Function removes guest from guest_list 
+        Function removes guest from guest_list
         """
 
         row = self.guest_list.currentRow()
@@ -145,12 +145,41 @@ class SeatingGUI(QWidget):
         if row < 0:
             return
 
-        self.guest_names.pop(row)
-
         guest_name = self.guest_names[row]
 
-        if guest_name in self.singles:
+        # checking if guest has a pair
+        for couple_idx, (person1, person2) in enumerate(self.couples[:]):
+
+            if guest_name == person1:
+                partner = person2
+
+            elif guest_name == person2:
+                partner = person1
+
+            else:
+                continue
+
+            # removing couple relation
+            idx1 = self.guest_names.index(person1)
+            idx2 = self.guest_names.index(person2)
+    
+            self.relations_table.item(idx1, idx2).setText("0")
+            self.relations_table.item(idx2, idx1).setText("0")
+
+            # remove a couple
+            self.couples.pop(couple_idx)
+            self.couples_list.takeItem(couple_idx)
+
+            # partner turns into single
+            if partner not in self.singles:
+                self.singles.append(partner)
+
+            break
+
+        else: # guest is single
             self.singles.remove(guest_name)
+
+        self.guest_names.pop(row)
 
         self.guest_list.takeItem(row)
 
@@ -158,6 +187,9 @@ class SeatingGUI(QWidget):
         self.update_relations_table()
 
     def refresh_combos(self):
+        """
+        Helper function that refreshes combos for couples
+        """
 
         self.person1_combo.clear()
         self.person2_combo.clear()
@@ -269,14 +301,14 @@ class SeatingGUI(QWidget):
 
         result = []
 
-        result.append("Tutaj podłączymy SeatingOptimizer\n")
+        result.append("SeatingOptimizer\n")
 
-        result.append("Goście:")
+        result.append("Guests:")
 
         for guest in self.guest_names:
             result.append(f"• {guest}")
 
-        result.append("\nPary:")
+        result.append("Couples:")
 
         for i in range(self.couples_list.count()):
             result.append(
