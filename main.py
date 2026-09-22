@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt
 
 import sys
 
+from optimiser import SeatingOptimizer
 
 class SeatingGUI(QWidget):
 
@@ -31,6 +32,8 @@ class SeatingGUI(QWidget):
         self.couples = []
 
         self.singles = []
+
+        self.tables_capacity = []
 
         main_layout = QVBoxLayout()
 
@@ -82,6 +85,35 @@ class SeatingGUI(QWidget):
         couples_controls.addWidget(add_couple_btn)
         couples_controls.addWidget(remove_couple_btn)
 
+        # tables
+
+        tables_label = QLabel("Tables")
+
+        self.tables_list = QListWidget()
+
+        tables_controls = QHBoxLayout()
+
+        self.table_capacity_input = QLineEdit()
+        self.table_capacity_input.setPlaceholderText("Capacity")
+
+        self.table_count_input = QLineEdit()
+        self.table_count_input.setPlaceholderText("Count")
+
+        add_table_btn = QPushButton("Add")
+        remove_table_btn = QPushButton("Remove")
+
+        add_table_btn.clicked.connect(self.add_table)
+        remove_table_btn.clicked.connect(self.remove_table)
+
+        self.table_capacity_input.returnPressed.connect(self.add_table)
+
+        self.table_count_input.returnPressed.connect(self.add_table)
+
+        tables_controls.addWidget(self.table_capacity_input)
+        tables_controls.addWidget(self.table_count_input)
+        tables_controls.addWidget(add_table_btn)
+        tables_controls.addWidget(remove_table_btn)
+
         # relations
 
         relations_label = QLabel("Relations (from -99 to 99)")
@@ -94,17 +126,11 @@ class SeatingGUI(QWidget):
         # relation table
         self.relations_table = QTableWidget()
         self.relations_table.setColumnCount(2)
-        self.relations_table.setHorizontalHeaderLabels(
-            ["Person", "Relation"]
-        )
+        self.relations_table.setHorizontalHeaderLabels(["Person", "Relation"])
 
-        self.relations_person_combo.currentTextChanged.connect(
-            self.update_relations_table
-        )
+        self.relations_person_combo.currentTextChanged.connect(self.update_relations_table)
 
-        self.relations_table.itemChanged.connect(
-            self.relation_changed
-        )
+        self.relations_table.itemChanged.connect(self.relation_changed)
 
         # output
 
@@ -124,6 +150,10 @@ class SeatingGUI(QWidget):
         main_layout.addWidget(self.couples_list)
         main_layout.addLayout(couples_controls)
 
+        main_layout.addWidget(tables_label)
+        main_layout.addWidget(self.tables_list)
+        main_layout.addLayout(tables_controls)
+
         main_layout.addWidget(relations_label)
         main_layout.addWidget(self.relations_person_combo)
         main_layout.addWidget(self.relations_table)
@@ -134,6 +164,51 @@ class SeatingGUI(QWidget):
         main_layout.addWidget(self.result_box)
 
         self.setLayout(main_layout)
+
+    def add_table(self):
+        """
+        Function that adds tables of given capacity
+        """
+
+        try:
+            capacity = int(
+                self.table_capacity_input.text()
+            )
+
+            count = int(
+                self.table_count_input.text()
+            )
+
+        except ValueError:
+            return
+
+        if capacity <= 0 or count <= 0:
+            return
+
+        for _ in range(count):
+
+            self.tables_capacity.append(capacity)
+
+            self.tables_list.addItem(
+                str(capacity)
+            )
+
+        self.table_capacity_input.clear()
+        self.table_count_input.clear()
+
+    def remove_table(self):
+        """
+        Function that removes table
+        """
+
+        row = self.tables_list.currentRow()
+
+        if row < 0:
+            return
+
+        self.tables_capacity.pop(row)
+
+        self.tables_list.takeItem(row)
 
     def add_guest(self):
         """
@@ -381,27 +456,109 @@ class SeatingGUI(QWidget):
 
         self.relations[key] = relation
 
+    def build_relations_matrix(self):
+        """
+        Helper function that builds a relations matrix for SeatingOptimiser class
+        """
+
+        n = len(self.guest_names)
+
+        relations_matrix = [
+            [None if i == j else 0 for j in range(n)]
+            for i in range(n)
+        ]
+
+        for (person1, person2), relation in self.relations.items():
+
+            idx1 = self.guest_names.index(person1)
+            idx2 = self.guest_names.index(person2)
+
+            relations_matrix[idx1][idx2] = relation
+            relations_matrix[idx2][idx1] = relation
+
+        return relations_matrix
+
+    def build_couples_index_table(self):
+        """
+        Helper function that makes couples indexed table for SeatingOptimiser class
+        """
+
+        couples_indices = []
+
+        for person1, person2 in self.couples:
+
+            idx1 = self.guest_names.index(person1)
+            idx2 = self.guest_names.index(person2)
+
+            couples_indices.append([idx1, idx2])
+
+        return couples_indices
+
     def calculate(self):
+        """
+        Function that runs the SeatingOptimiser class and calculates the output using it
+        """
 
-        result = []
+        try:
 
-        result.append("SeatingOptimizer\n")
+            relations_matrix = self.build_relations_matrix()
 
-        result.append("Guests:")
+            couples_indices = self.build_couples_index_table()
 
-        for guest in self.guest_names:
-            result.append(f"• {guest}")
-
-        result.append("Couples:")
-
-        for i in range(self.couples_list.count()):
-            result.append(
-                self.couples_list.item(i).text()
+            # making a class
+            optimizer = SeatingOptimizer(
+                guest_list = self.guest_names,
+                guest_relations = relations_matrix,
+                couples_list = couples_indices,
+                tables_capacity = self.tables_capacity
             )
 
-        self.result_box.setText(
-            "\n".join(result)
-        )
+            # calculating the output
+            best_tables, best_value = (optimizer.find_best_solution())
+
+            result = []
+
+            # writing the output
+            result.append(
+                f"Best solution value: {best_value}"
+            )
+
+            result.append("")
+
+            for table_idx, table in enumerate(best_tables):
+
+                result.append(
+                    f"Table {table_idx + 1}:"
+                )
+
+                guests = []
+
+                for element_idx in table:
+
+                    element = optimizer.elements[element_idx]
+
+                    for guest_idx in element["index"]:
+
+                        guests.append(
+                            self.guest_names[guest_idx]
+                        )
+
+                result.append(
+                    ", ".join(guests)
+                )
+
+                result.append("")
+
+            self.result_box.setText(
+                "\n".join(result)
+            )
+
+        except Exception as e:
+            self.result_box.setText(
+                f"Error:\n{e}"
+            )
+
+            return
 
 if __name__ == "__main__":
 

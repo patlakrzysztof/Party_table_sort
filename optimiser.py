@@ -14,7 +14,7 @@ class SeatingOptimizer:
         tables_capacity,
         initial_temperature=100,
         cooling_rate=1,
-        max_iterations=1
+        max_iterations=500
     ):
 
         self.guest_list = guest_list
@@ -461,43 +461,3 @@ class SeatingOptimizer:
         self.table_values = [ self.calculate_table_value(table) for table in self.tables ]
 
         return best_tables, best_value
-
-
-
-# guest list
-guest_list = [
-    "Amelia",
-    "Krzysiek",
-    "Paweł",
-    "Aleksander",
-    "Ruda",
-    "Mateusz",
-    "Gotka",
-    "Kamil"
-]
-
-# our graph of dependencies [-100,100] - None for self
-guest_relations = [
-    [None,100,80,-100,40,70,93,-100],    #Amelia
-     [100,None,80,-80,30,80,60,-100],    #Krzysiek
-     [80,80,None,0,70,80,100,-100],      #Paweł
-     [90,-50,0,None,0,0,60,20],        #Aleksander
-     [40,30,70,0,None,100,70,-100],      #Ruda
-     [80,80,80,0,100,None,40,70],      #Mateusz
-     [93,60,100,60,70,40,None,-100],     #Gotka
-     [-100,-100,-100,20,-100,70,-100,None] #Kamil
-     ]
-
-# couples (couple must sit together)
-couples_list = [[0,1],[2,6],[4,5]]
-
-optimizer = SeatingOptimizer(
-    guest_list=guest_list,
-    guest_relations=guest_relations,
-    couples_list=couples_list,
-    tables_capacity=[3,3,4],
-)
-
-print(optimizer.find_best_solution())
-
-print(optimizer.elements)
