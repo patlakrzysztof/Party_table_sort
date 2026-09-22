@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QTextEdit
 )
 
+from PySide6.QtCore import Qt
+
 import sys
 
 
@@ -37,11 +39,15 @@ class SeatingGUI(QWidget):
         guests_label = QLabel("Guests")
 
         self.guest_list = QListWidget()
+        self.guest_list.setSortingEnabled(True)
 
         guest_controls = QHBoxLayout()
 
         self.guest_input = QLineEdit()
         self.guest_input.setPlaceholderText("Guest name")
+        self.guest_input.returnPressed.connect(
+            self.add_guest
+        )
 
         add_guest_btn = QPushButton("Add")
         remove_guest_btn = QPushButton("Remove")
@@ -78,9 +84,27 @@ class SeatingGUI(QWidget):
 
         # relations
 
-        relations_label = QLabel("Relations")
+        relations_label = QLabel("Relations (from -99 to 99)")
 
+        self.relations = {}
+
+        # dropdown list for relations
+        self.relations_person_combo = QComboBox()
+
+        # relation table
         self.relations_table = QTableWidget()
+        self.relations_table.setColumnCount(2)
+        self.relations_table.setHorizontalHeaderLabels(
+            ["Person", "Relation"]
+        )
+
+        self.relations_person_combo.currentTextChanged.connect(
+            self.update_relations_table
+        )
+
+        self.relations_table.itemChanged.connect(
+            self.relation_changed
+        )
 
         # output
 
@@ -101,6 +125,7 @@ class SeatingGUI(QWidget):
         main_layout.addLayout(couples_controls)
 
         main_layout.addWidget(relations_label)
+        main_layout.addWidget(self.relations_person_combo)
         main_layout.addWidget(self.relations_table)
 
         main_layout.addWidget(calculate_btn)
@@ -159,12 +184,9 @@ class SeatingGUI(QWidget):
             else:
                 continue
 
-            # removing couple relation
-            idx1 = self.guest_names.index(person1)
-            idx2 = self.guest_names.index(person2)
-    
-            self.relations_table.item(idx1, idx2).setText("0")
-            self.relations_table.item(idx2, idx1).setText("0")
+            # removing couple relation (always sorted)
+            key = tuple(sorted([person1, person2]))
+            self.relations.pop(key, None)
 
             # remove a couple
             self.couples.pop(couple_idx)
@@ -178,6 +200,11 @@ class SeatingGUI(QWidget):
 
         else: # guest is single
             self.singles.remove(guest_name)
+
+        # removing guests relations
+        for key in list(self.relations.keys()):
+            if guest_name in key:
+                del self.relations[key]
 
         self.guest_names.pop(row)
 
@@ -194,8 +221,14 @@ class SeatingGUI(QWidget):
         self.person1_combo.clear()
         self.person2_combo.clear()
 
-        self.person1_combo.addItems(self.singles)
-        self.person2_combo.addItems(self.singles)
+        self.person1_combo.addItems(sorted(self.singles))
+
+        self.person2_combo.addItems(sorted(self.singles))
+        
+        self.relations_person_combo.clear()
+        self.relations_person_combo.addItems(sorted(self.guest_names))
+
+        self.update_relations_table()
 
     def add_couple(self):
         """
@@ -222,15 +255,11 @@ class SeatingGUI(QWidget):
             f"{person1} - {person2}"
         )
 
-        # relation of couple must be 100
-        idx1 = self.guest_names.index(person1)
-        idx2 = self.guest_names.index(person2)
+        # relation of couple must be 100 (always sorted)
+        key = tuple(sorted([person1, person2]))
+        self.relations[key] = 100
 
-        item1 = self.relations_table.item(idx1, idx2)
-        item2 = self.relations_table.item(idx2, idx1)
-
-        item1.setText("100")
-        item2.setText("100")
+        self.update_relations_table()
 
         # removes couple from dropdown list
         self.singles.remove(person1)
@@ -250,13 +279,9 @@ class SeatingGUI(QWidget):
 
         person1, person2 = self.couples[row]
 
-        idx1 = self.guest_names.index(person1)
-        idx2 = self.guest_names.index(person2)
-
-
-        # default relation
-        self.relations_table.item(idx1, idx2).setText("0")
-        self.relations_table.item(idx2, idx1).setText("0")
+        # deleting relation
+        key = tuple(sorted([person1, person2]))
+        self.relations.pop(key, None)
 
         self.couples.pop(row)
         self.couples_list.takeItem(row)
@@ -268,34 +293,93 @@ class SeatingGUI(QWidget):
         self.refresh_combos()
 
 
-    #=========================================
-    # to rewrite
-    #========================================
-
     def update_relations_table(self):
+        """
+        Function that updates the relations table that is being viewed
+        """
 
-        n = len(self.guest_names)
+        selected = self.relations_person_combo.currentText()
 
-        self.relations_table.setRowCount(n)
-        self.relations_table.setColumnCount(n)
+        self.relations_table.blockSignals(True)
 
-        self.relations_table.setHorizontalHeaderLabels(
-            self.guest_names
-        )
+        if not selected:
+            self.relations_table.setRowCount(0)
+            self.relations_table.blockSignals(False)
+            return
 
-        self.relations_table.setVerticalHeaderLabels(
-            self.guest_names
-        )
+        others = sorted([ person for person in self.guest_names if person != selected ])
 
-        for row in range(n):
-            for col in range(n):
+        self.relations_table.setRowCount(len(others))
 
-                if row == col:
-                    item = QTableWidgetItem("-")
-                else:
-                    item = QTableWidgetItem("0")
+        for row, other in enumerate(others):
 
-                self.relations_table.setItem(row, col, item)
+            name_item = QTableWidgetItem(other)
+
+            # cannot change name of the row
+            name_item.setFlags(
+                name_item.flags() & ~Qt.ItemIsEditable
+            )
+
+            # sorted for a dictionary
+            key = tuple(sorted([selected, other]))
+
+            if key in self.relations:
+                value = str(self.relations[key])
+            else:
+                value = "-"
+
+            relation_item = QTableWidgetItem(value)
+
+            # couples are not editable (mocked 100)
+            if key in self.relations and self.relations[key] == 100:
+                relation_item.setFlags(
+                    relation_item.flags() & ~Qt.ItemIsEditable
+                )
+
+            self.relations_table.setItem(row, 0, name_item)
+            self.relations_table.setItem(row, 1, relation_item)
+
+        self.relations_table.blockSignals(False)
+
+    def relation_changed(self, element):
+        """
+        Function that changes the relation of an element
+        """
+
+        # react only to a relation value changes
+        if element.column() != 1:
+            return
+
+        selected = self.relations_person_combo.currentText()
+
+        if not selected:
+            return
+
+        other = self.relations_table.item(element.row(),0).text()
+
+        value = element.text().strip()
+
+        # key must always be sorted
+        key = tuple(sorted([selected, other]))
+
+        # deleting a relation
+        if value == "-":
+            self.relations.pop(key, None)
+            return
+
+        # relation must be an intinger
+        try:
+            relation = int(value)
+        except ValueError:
+            self.update_relations_table()
+            return
+
+        # relation must be between -99 and 99
+        if relation < -99 or relation > 99:
+            self.update_relations_table()
+            return
+
+        self.relations[key] = relation
 
     def calculate(self):
 
