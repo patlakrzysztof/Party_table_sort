@@ -87,7 +87,7 @@ class SeatingGUI(QWidget):
 
         # tables
 
-        tables_label = QLabel("Tables")
+        tables_label = QLabel("Tables ( Capacity x Count )")
 
         self.tables_list = QListWidget()
 
@@ -132,6 +132,20 @@ class SeatingGUI(QWidget):
 
         self.relations_table.itemChanged.connect(self.relation_changed)
 
+        # algorithm settings
+
+        settings_label = QLabel("Algorithm settings")
+
+        settings_layout = QHBoxLayout()
+
+        self.iterations_input = QLineEdit()
+        self.iterations_input.setPlaceholderText("Iterations")
+        self.iterations_input.setText("1000")
+
+        settings_layout.addWidget(QLabel("Iterations:"))
+
+        settings_layout.addWidget(self.iterations_input)
+
         # output
 
         calculate_btn = QPushButton("Find best solution")
@@ -157,6 +171,9 @@ class SeatingGUI(QWidget):
         main_layout.addWidget(relations_label)
         main_layout.addWidget(self.relations_person_combo)
         main_layout.addWidget(self.relations_table)
+
+        main_layout.addWidget(settings_label)
+        main_layout.addLayout(settings_layout)
 
         main_layout.addWidget(calculate_btn)
 
@@ -186,12 +203,9 @@ class SeatingGUI(QWidget):
             return
 
         for _ in range(count):
-
             self.tables_capacity.append(capacity)
 
-            self.tables_list.addItem(
-                str(capacity)
-            )
+        self.refresh_tables_list()
 
         self.table_capacity_input.clear()
         self.table_count_input.clear()
@@ -209,6 +223,30 @@ class SeatingGUI(QWidget):
         self.tables_capacity.pop(row)
 
         self.tables_list.takeItem(row)
+
+    def refresh_tables_list(self):
+        """
+        Helper function that refreshes tables list
+        """
+
+        self.tables_list.clear()
+
+        capacities = {}
+
+        for capacity in self.tables_capacity:
+
+            if capacity not in capacities:
+                capacities[capacity] = 0
+
+            capacities[capacity] += 1
+
+        for capacity in sorted(capacities):
+
+            count = capacities[capacity]
+
+            self.tables_list.addItem(
+                f"{capacity} x {count}"
+            )
 
     def add_guest(self):
         """
@@ -501,6 +539,22 @@ class SeatingGUI(QWidget):
 
         try:
 
+            iterations = int(
+                self.iterations_input.text()
+            )
+
+        except ValueError:
+
+            self.result_box.setText("Iterations must be an integer.")
+            return
+
+        if iterations <= 0:
+
+            self.result_box.setText("Iterations must be positive.")
+            return
+
+        try:
+
             relations_matrix = self.build_relations_matrix()
 
             couples_indices = self.build_couples_index_table()
@@ -510,7 +564,8 @@ class SeatingGUI(QWidget):
                 guest_list = self.guest_names,
                 guest_relations = relations_matrix,
                 couples_list = couples_indices,
-                tables_capacity = self.tables_capacity
+                tables_capacity = self.tables_capacity,
+                max_iterations = iterations
             )
 
             # calculating the output
