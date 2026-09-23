@@ -19,6 +19,8 @@ from PySide6.QtCore import Qt
 
 import sys
 
+import json
+
 from optimiser import SeatingOptimizer
 
 class SeatingGUI(QWidget):
@@ -158,6 +160,14 @@ class SeatingGUI(QWidget):
 
         settings_layout.addWidget(self.iterations_input)
 
+        # presets
+
+        save_preset_btn = QPushButton("Save preset")
+        load_preset_btn = QPushButton("Load preset")
+
+        save_preset_btn.clicked.connect(self.save_preset)
+        load_preset_btn.clicked.connect(self.load_preset)
+
         # output
 
         calculate_btn = QPushButton("Find best solution")
@@ -188,6 +198,9 @@ class SeatingGUI(QWidget):
 
         left_layout.addWidget(settings_label)
         left_layout.addLayout(settings_layout)
+
+        left_layout.addWidget(save_preset_btn)
+        left_layout.addWidget(load_preset_btn)
 
         left_layout.addWidget(calculate_btn)
         left_layout.addWidget(save_btn)
@@ -614,6 +627,107 @@ class SeatingGUI(QWidget):
             couples_indices.append([idx1, idx2])
 
         return couples_indices
+
+    def save_preset(self):
+        """
+        Function that saves a user preset
+        """
+
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save preset",
+            "preset.json",
+            "JSON files (*.json)"
+        )
+
+        if not filename:
+            return
+
+        data = {
+            "guests": self.guest_names,
+            "couples": self.couples,
+            "relations": [
+                [p1, p2, value]
+                for (p1, p2), value in self.relations.items()
+            ],
+            "tables_capacity": self.tables_capacity,
+            "iterations": self.iterations_input.text()
+        }
+
+        # writes a preset into file
+        with open(filename, "w", encoding="utf-8") as file:
+            json.dump(
+                data,
+                file,
+                ensure_ascii=False,
+                indent=4
+            )
+
+    def load_preset(self):
+        """
+        Function that load a user preset from a file
+        """
+
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load preset",
+            "",
+            "JSON files (*.json)"
+        )
+
+        if not filename:
+            return
+
+        # reads a file
+        with open(filename, "r", encoding="utf-8") as file:
+            data = json.load(file)
+
+        self.guest_names = data["guests"]
+
+        self.couples = [
+            tuple(couple)
+            for couple in data["couples"]
+        ]
+
+        self.relations = {
+            tuple(sorted([p1, p2])): value
+            for p1, p2, value in data["relations"]
+        }
+
+        self.tables_capacity = data["tables_capacity"]
+
+        self.iterations_input.setText(
+            str(data.get("iterations", "1000"))
+        )
+
+        # rebuild singles
+        pairs = set()
+
+        for p1, p2 in self.couples:
+            pairs.add(p1)
+            pairs.add(p2)
+
+        self.singles = [
+            guest
+            for guest in self.guest_names
+            if guest not in pairs
+        ]
+
+        # refresh widgets
+        self.guest_list.clear()
+        self.guest_list.addItems(self.guest_names)
+
+        self.couples_list.clear()
+
+        for p1, p2 in self.couples:
+            self.couples_list.addItem(
+                f"{p1} - {p2}"
+            )
+
+        self.refresh_tables_list()
+        self.refresh_combos()
+        self.update_relations_table()
+        self.update_counts()
 
     def save_output(self):
         """
