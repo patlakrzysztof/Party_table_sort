@@ -10,7 +10,9 @@ from PySide6.QtWidgets import (
     QComboBox,
     QTableWidget,
     QTableWidgetItem,
-    QTextEdit
+    QTextEdit,
+    QFileDialog,
+    QSplitter
 )
 
 from PySide6.QtCore import Qt
@@ -25,7 +27,7 @@ class SeatingGUI(QWidget):
         super().__init__()
 
         self.setWindowTitle("Seating optimiser")
-        self.resize(1000, 700)
+        self.resize(1400, 900)
 
         self.guest_names = []
 
@@ -36,6 +38,14 @@ class SeatingGUI(QWidget):
         self.tables_capacity = []
 
         main_layout = QVBoxLayout()
+
+        left_layout = QVBoxLayout()
+
+        right_layout = QVBoxLayout()
+
+        top_splitter = QSplitter(Qt.Horizontal)
+
+        main_splitter = QSplitter(Qt.Vertical)
 
         # guests
 
@@ -134,6 +144,8 @@ class SeatingGUI(QWidget):
 
         # algorithm settings
 
+        self.summary_label = QLabel("Guests: 0 | Seats: 0")
+
         settings_label = QLabel("Algorithm settings")
 
         settings_layout = QHBoxLayout()
@@ -151,36 +163,81 @@ class SeatingGUI(QWidget):
         calculate_btn = QPushButton("Find best solution")
         calculate_btn.clicked.connect(self.calculate)
 
+        save_btn = QPushButton("Save output")
+        save_btn.clicked.connect(self.save_output)
+
         self.result_box = QTextEdit()
         self.result_box.setReadOnly(True)
 
         # layout
 
-        main_layout.addWidget(guests_label)
-        main_layout.addWidget(self.guest_list)
-        main_layout.addLayout(guest_controls)
+        # left panel
+        left_layout.addWidget(guests_label)
+        left_layout.addWidget(self.guest_list)
+        left_layout.addLayout(guest_controls)
 
-        main_layout.addWidget(couples_label)
-        main_layout.addWidget(self.couples_list)
-        main_layout.addLayout(couples_controls)
+        left_layout.addWidget(couples_label)
+        left_layout.addWidget(self.couples_list)
+        left_layout.addLayout(couples_controls)
 
-        main_layout.addWidget(tables_label)
-        main_layout.addWidget(self.tables_list)
-        main_layout.addLayout(tables_controls)
+        left_layout.addWidget(tables_label)
+        left_layout.addWidget(self.tables_list)
+        left_layout.addLayout(tables_controls)
 
-        main_layout.addWidget(relations_label)
-        main_layout.addWidget(self.relations_person_combo)
-        main_layout.addWidget(self.relations_table)
+        left_layout.addWidget(self.summary_label)
 
-        main_layout.addWidget(settings_label)
-        main_layout.addLayout(settings_layout)
+        left_layout.addWidget(settings_label)
+        left_layout.addLayout(settings_layout)
 
-        main_layout.addWidget(calculate_btn)
+        left_layout.addWidget(calculate_btn)
+        left_layout.addWidget(save_btn)
 
-        main_layout.addWidget(QLabel("Output"))
-        main_layout.addWidget(self.result_box)
+        # right panel
+        right_layout.addWidget(relations_label)
+        right_layout.addWidget(self.relations_person_combo)
+        right_layout.addWidget(self.relations_table)
+
+        self.relations_table.setMinimumWidth(400)
+
+        # splitters
+        left_widget = QWidget()
+        left_widget.setLayout(left_layout)
+
+        right_widget = QWidget()
+        right_widget.setLayout(right_layout)
+
+        # output panel
+        output_widget = QWidget()
+        output_layout = QVBoxLayout(output_widget)
+
+        output_layout.addWidget(QLabel("Output"))
+        output_layout.addWidget(self.result_box)
+
+        # top splitter (left / right)
+        top_splitter = QSplitter(Qt.Horizontal)
+
+        top_splitter.addWidget(left_widget)
+        top_splitter.addWidget(right_widget)
+
+        top_splitter.setStretchFactor(0, 1)
+        top_splitter.setStretchFactor(1, 2)
+
+        # main splitter (top / bottom)
+        main_splitter = QSplitter(Qt.Vertical)
+
+        main_splitter.addWidget(top_splitter)
+        main_splitter.addWidget(output_widget)
+
+        main_splitter.setStretchFactor(0, 3)
+        main_splitter.setStretchFactor(1, 1)
+
+        # main window layout
+        main_layout.addWidget(main_splitter)
 
         self.setLayout(main_layout)
+
+        self.update_counts()
+
 
     def add_table(self):
         """
@@ -210,9 +267,11 @@ class SeatingGUI(QWidget):
         self.table_capacity_input.clear()
         self.table_count_input.clear()
 
+        self.update_counts()
+
     def remove_table(self):
         """
-        Function that removes table
+        Function that removes table group.
         """
 
         row = self.tables_list.currentRow()
@@ -220,9 +279,18 @@ class SeatingGUI(QWidget):
         if row < 0:
             return
 
-        self.tables_capacity.pop(row)
+        capacities = {}
 
-        self.tables_list.takeItem(row)
+        for capacity in self.tables_capacity:
+            capacities[capacity] = capacities.get(capacity, 0) + 1
+
+        selected_capacity = sorted(capacities)[row]
+
+        # remove all tables with this capacity
+        self.tables_capacity = [capacity for capacity in self.tables_capacity if capacity != selected_capacity]
+
+        self.refresh_tables_list()
+        self.update_counts()
 
     def refresh_tables_list(self):
         """
@@ -272,6 +340,8 @@ class SeatingGUI(QWidget):
         self.guest_input.clear()
 
         self.refresh_combos()
+
+        self.update_counts()
 
     def remove_guest(self):
         """
@@ -325,6 +395,8 @@ class SeatingGUI(QWidget):
 
         self.refresh_combos()
         self.update_relations_table()
+
+        self.update_counts()
 
     def refresh_combos(self):
         """
@@ -494,6 +566,17 @@ class SeatingGUI(QWidget):
 
         self.relations[key] = relation
 
+    def update_counts(self):
+        """
+        Helper function that counts guests and seats
+        """
+        guests_count = len(self.guest_names)
+        seats_count = sum(self.tables_capacity)
+
+        self.summary_label.setText(
+            f"Guests: {guests_count} | Seats: {seats_count}"
+        )
+
     def build_relations_matrix(self):
         """
         Helper function that builds a relations matrix for SeatingOptimiser class
@@ -531,6 +614,36 @@ class SeatingGUI(QWidget):
             couples_indices.append([idx1, idx2])
 
         return couples_indices
+
+    def save_output(self):
+        """
+        Function that saves output to a text file.
+        """
+
+        text = self.result_box.toPlainText()
+
+        if not text:
+            return
+
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save result",
+            "seating_result.txt",
+            "Text files (*.txt);;All files (*)"
+        )
+
+        if not filename:
+            return
+
+        # writing output to a file
+        try:
+            with open(filename, "w", encoding="utf-8") as file:
+                file.write(text)
+
+        except Exception as e:
+            self.result_box.append(
+                f"\n\nSave error:\n{e}"
+            )
 
     def calculate(self):
         """
@@ -575,7 +688,7 @@ class SeatingGUI(QWidget):
 
             # writing the output
             result.append(
-                f"Best solution value: {best_value}"
+                f"Best solution value: {best_value}\n(value represents how good are the relations at the tables)"
             )
 
             result.append("")

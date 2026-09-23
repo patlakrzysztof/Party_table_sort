@@ -1,6 +1,5 @@
 from exceptions import ElementNotAtTable,InitError,NoFreeSeats
 import math
-import copy
 import random 
 
 
@@ -359,6 +358,9 @@ class SeatingOptimizer:
         Generate swap action which returns elements and table indexes
           or move action which returns tables and element to move
         """
+
+        if self.number_of_tables < 2:
+            return None
 
         move_types = ["move","swap"]
 
