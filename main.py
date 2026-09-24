@@ -154,7 +154,7 @@ class SeatingGUI(QWidget):
 
         self.iterations_input = QLineEdit()
         self.iterations_input.setPlaceholderText("Iterations")
-        self.iterations_input.setText("1000")
+        self.iterations_input.setText("100")
 
         settings_layout.addWidget(QLabel("Iterations:"))
 

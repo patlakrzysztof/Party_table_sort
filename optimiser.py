@@ -11,9 +11,9 @@ class SeatingOptimizer:
         guest_relations,
         couples_list,
         tables_capacity,
+        max_iterations,
         initial_temperature=100,
         cooling_rate=1,
-        max_iterations=500
     ):
 
         self.guest_list = guest_list
